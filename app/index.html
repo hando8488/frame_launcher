@@ -285,6 +285,7 @@ var CONFIG = {
 };
 // =====================================================================
 
+var VERSION = '0.6.1';
 var SERVICE = 'http://127.0.0.1:8093';
 var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406, CH_UP: 427, CH_DOWN: 428 };
 var PREVIEW = location.protocol === 'file:' || location.search.indexOf('preview') >= 0;
@@ -644,6 +645,7 @@ function resolveAppId(tile) {
 }
 function launchApp(tile) {
   var id = resolveAppId(tile);
+  svcLog('Klick ' + tile.label + ' → ' + id);
   if (!id) return toast(tile.label + ' ist nicht installiert');
   if (PREVIEW) return toast('Start: ' + tile.label + ' (' + id + ')');
   // 1. Hintergrunddienst (TV-REST-API, dann Tizen-API, dann Fernbedienungs-Kanal), 2. Tizen-API direkt
@@ -843,7 +845,7 @@ function setEditing(on) {
 function updateHint() {
   $('hint').innerHTML = editing
     ? '◀ ▶ verschieben · OK Anschluss<span class="dot" style="background:#e5484d"></span>fertig<span class="dot" style="background:#30a46c"></span>App hinzufügen<span class="dot" style="background:#f5d90a"></span>entfernen<span class="dot" style="background:#3e63dd"></span>zurücksetzen'
-    : '<span class="dot" style="background:#e5484d;margin-left:0"></span>bearbeiten';
+    : '<span class="dot" style="background:#e5484d;margin-left:0"></span>bearbeiten · v' + VERSION;
 }
 
 // ---------- Fokus & Navigation ----------
@@ -1043,6 +1045,7 @@ loadApps();
 loadCalendar();
 watchSetup();
 checkService();
+svcLog('Seite v' + VERSION + ' geladen');
 </script>
 </body>
 </html>
