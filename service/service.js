@@ -205,13 +205,33 @@ function listApps(cb) {
   }, function (e) { cb(e); });
 }
 
-function launchApp(id, cb) {
-  tizen.application.launch(id, function () { cb(null); }, function (e) {
-    // Fallback: Store-IDs (z. B. 3201512006785) über den TV-Kanal starten
-    remoteSend({
-      method: 'ms.channel.emit',
-      params: { event: 'ed.apps.launch', to: 'host', data: { action_type: 'DEEP_LINK', appId: id } }
-    }, function (err) { cb(err ? e : null); });
+// TV-REST-API: POST /api/v2/applications/<Store-ID> startet die App (wie die Smartphone-Fernbedienung).
+function restLaunch(storeId, cb) {
+  var req = http.request({ host: '127.0.0.1', port: 8001, method: 'POST', path: '/api/v2/applications/' + storeId }, function (r) {
+    r.resume();
+    cb(r.statusCode >= 200 && r.statusCode < 300 ? null : new Error('REST ' + r.statusCode));
+  });
+  req.setTimeout(4000, function () { req.abort(); });
+  req.on('error', cb);
+  req.end();
+}
+
+function launchApp(id, storeId, cb) {
+  var done = function (how) { return function (err) { log('Start ' + id + ' via ' + how + ': ' + (err ? err.message || err : 'ok')); }; };
+  function viaTizen() {
+    tizen.application.launch(id, function () { done('tizen')(); cb(null); }, function (e) {
+      done('tizen')(e);
+      // letzter Versuch: über den Fernbedienungs-Kanal
+      remoteSend({
+        method: 'ms.channel.emit',
+        params: { event: 'ed.apps.launch', to: 'host', data: { action_type: 'DEEP_LINK', appId: storeId || id } }
+      }, function (err) { done('remote')(err); cb(err || null); });
+    });
+  }
+  if (!storeId) return viaTizen();
+  restLaunch(storeId, function (err) {
+    done('rest')(err);
+    if (err) viaTizen(); else cb(null);
   });
 }
 
@@ -349,7 +369,7 @@ var server = http.createServer(function (req, res) {
       case '/info': return reply(res, null, { ips: lanAddresses(), port: PORT, calendarUrl: calendarUrl });
       case '/log': log('Seite: ' + q.msg); return reply(res, null);
       case '/apps': return listApps(function (e, apps) { reply(res, e, apps); });
-      case '/launch': return launchApp(q.id, function (e) { reply(res, e); });
+      case '/launch': return launchApp(q.id, q.store, function (e) { reply(res, e); });
       case '/open': return openUrl(q.url, function (e) { reply(res, e); });
       case '/key': return sendKey(q.k, function (e) { reply(res, e); });
       case '/art': return setArtMode(q.on !== '0', function (e) { reply(res, e); });

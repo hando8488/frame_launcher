@@ -646,18 +646,14 @@ function launchApp(tile) {
   var id = resolveAppId(tile);
   if (!id) return toast(tile.label + ' ist nicht installiert');
   if (PREVIEW) return toast('Start: ' + tile.label + ' (' + id + ')');
-  // 1. TV-REST-API (zuverlässig für Store-Apps), 2. Tizen-API, 3. Hintergrunddienst
-  var storeIds = (tile.ids || []).filter(function (x) { return /^\d+$/.test(x); });
-  var rest = storeIds.length
-    ? fetch('http://127.0.0.1:8001/api/v2/applications/' + storeIds[0], { method: 'POST', mode: 'no-cors' })
-    : Promise.reject();
-  rest.catch(function () {
+  // 1. Hintergrunddienst (TV-REST-API, dann Tizen-API, dann Fernbedienungs-Kanal), 2. Tizen-API direkt
+  var storeId = (tile.ids || []).filter(function (x) { return /^\d+$/.test(x); })[0] || '';
+  svc('/launch?id=' + encodeURIComponent(id) + '&store=' + storeId).catch(function () {
     return new Promise(function (ok, fail) {
       if (!hasTizen()) return fail();
       tizen.application.launch(id, ok, fail);
     });
-  }).catch(function () { return svc('/launch?id=' + encodeURIComponent(id)); })
-    .catch(function () { toast(tile.label + ' konnte nicht gestartet werden'); });
+  }).catch(function () { toast(tile.label + ' konnte nicht gestartet werden'); });
 }
 function tvCommand(path, label) {
   if (PREVIEW) return toast(label);
