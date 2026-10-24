@@ -51,10 +51,13 @@ function sendFrame(sock, data, opcode) {
 
 function wsConnect(channel, handlers) {
   var path = '/api/v2/channels/' + channel + '?name=' + CLIENT_NAME + (token ? '&token=' + token : '');
-  var sock = tls.connect({ host: '127.0.0.1', port: 8002, rejectUnauthorized: false }, function () {
+  // Über die eigene LAN-Adresse wie ein Handy im Heimnetz – Verbindungen von 127.0.0.1 lehnt der TV ab.
+  var host = lanAddresses()[0] || '127.0.0.1';
+  log('Verbinde ' + channel + ' über ' + host + (token ? ' (mit Token)' : ''));
+  var sock = tls.connect({ host: host, port: 8002, rejectUnauthorized: false }, function () {
     sock.write(
       'GET ' + path + ' HTTP/1.1\r\n' +
-      'Host: 127.0.0.1:8002\r\n' +
+      'Host: ' + host + ':8002\r\n' +
       'Upgrade: websocket\r\n' +
       'Connection: Upgrade\r\n' +
       'Sec-WebSocket-Key: ' + crypto.randomBytes(16).toString('base64') + '\r\n' +
@@ -371,7 +374,7 @@ var server = http.createServer(function (req, res) {
   if (u.pathname === '/ping') return reply(res, null, 'pong');
   // Kurze Rücksprung-Adresse zum Launcher, z. B. als Seite in TizenPortal: 127.0.0.1:8093/home
   if (u.pathname === '/home') {
-    res.writeHead(302, { Location: 'http://127.0.0.1:8081/module/' + encodeURIComponent('gh/hando8488/frame_launcher') + '/app/index.html' });
+    res.writeHead(302, { Location: 'http://127.0.0.1:8081/module/' + encodeURIComponent('gh/hando8488/frame_launcher@main') + '/app/index.html' });
     return res.end();
   }
   if (u.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
