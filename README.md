@@ -5,7 +5,7 @@ Schneller Startbildschirm für Samsung The Frame als [TizenBrew](https://github.
 - Kacheln: Prime Video, YouTube, PS5 (HDMI 1), Spotify, Das Erste & ZDF live, TizenPortal
 - Uhrzeit, Wetter Leipzig (heute + 2 Tage, Open-Meteo)
 - Art Mode per Knopf
-- Komplett ohne Framework, eine Datei (`app/index.html`)
+- Komplett ohne Framework, eine Datei (`app/app.html`)
 
 ## Bedienung
 
@@ -20,7 +20,7 @@ Schneller Startbildschirm für Samsung The Frame als [TizenBrew](https://github.
 | Zurück     | Overlay / Player schließen                 |
 | ▲▼ / P+ P- | (im Live-Player) Sender wechseln           |
 
-Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/index.html` im `CONFIG`-Block.
+Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/app.html` im `CONFIG`-Block.
 Änderungen am TV (Reihenfolge, hinzugefügte Apps) werden lokal auf dem TV gespeichert.
 
 ## Installation auf dem TV
@@ -43,4 +43,4 @@ Nach Änderungen: `git push`, dann Cache leeren über
 ```bash
 python3 -m http.server 8777
 ```
-→ http://127.0.0.1:8777/app/index.html?preview (F1–F4 = Farbtasten, Esc = Zurück)
+→ http://127.0.0.1:8777/app/app.html?preview (F1–F4 = Farbtasten, Esc = Zurück)

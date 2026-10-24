@@ -1,7 +1,7 @@
 {
   "name": "frame-launcher",
   "appName": "Frame Launcher",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Schneller, konfigurierbarer Startbildschirm für Samsung The Frame (TizenBrew-Modul).",
   "packageType": "app",
   "appPath": "app/index.html",
