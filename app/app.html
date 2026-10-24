@@ -30,7 +30,18 @@
       radial-gradient(1200px 700px at 85% -10%, rgba(64, 92, 160, .22), transparent 60%),
       radial-gradient(900px 600px at -5% 110%, rgba(120, 60, 160, .16), transparent 60%),
       var(--bg);
+    background-size: cover;
   }
+  #stage.photo {
+    /* Foto abdunkeln, damit Schrift lesbar bleibt – einmal gemalt, kostet beim Navigieren nichts */
+    background:
+      linear-gradient(90deg, rgba(6, 8, 13, .5), rgba(6, 8, 13, .12) 50%, rgba(6, 8, 13, .62) 64%),
+      linear-gradient(180deg, rgba(6, 8, 13, .1), rgba(6, 8, 13, .45)),
+      var(--photo) center / cover no-repeat,
+      var(--bg);
+  }
+  .photo .day, .photo .pill:not(.focus) { background: rgba(10, 12, 18, .5); }
+  .photo #time, .photo #date, .photo .now { text-shadow: 0 2px 18px rgba(0, 0, 0, .45); }
 
   /* ---------- Spalten ---------- */
   #stage { display: flex; }
@@ -246,6 +257,9 @@
 var CONFIG = {
   weather: { name: 'Leipzig', lat: 51.34, lon: 12.37 },
 
+  // Hintergrundbild: Datei in app/ oder volle URL, '' = ohne
+  background: 'bg.jpg',
+
   // Je die ersten 3 Einträge. proxy: true = über den TV-Dienst holen (Feed erlaubt keinen Browser-Abruf).
   // Familienkalender: Link wird über http://<TV-IP>:8093/setup eingetragen (nicht hier – das Repo ist öffentlich).
   calendar: { name: 'Familie', days: 14, maxRows: 11, rotateSeconds: 10 },
@@ -285,7 +299,7 @@ var CONFIG = {
 };
 // =====================================================================
 
-var VERSION = '0.8.1';
+var VERSION = '0.9.0';
 var SERVICE = 'http://127.0.0.1:8093';
 var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406, CH_UP: 427, CH_DOWN: 428 };
 var PREVIEW = location.protocol === 'file:' || location.search.indexOf('preview') >= 0;
@@ -840,7 +854,7 @@ function reclaimFromModule() {
 
 function setEditing(on) {
   editing = on;
-  $('stage').className = on ? 'editing' : '';
+  $('stage').classList.toggle('editing', on);
   updateHint();
 }
 function updateHint() {
@@ -1038,7 +1052,20 @@ function fit() {
   var s = window.innerWidth / 1920;
   $('stage').style.transform = Math.abs(s - 1) < 0.01 ? '' : 'scale(' + s + ')';
 }
+function applyBackground() {
+  var bg = CONFIG.background;
+  if (!bg) return;
+  if (!/^https?:/.test(bg)) {
+    var ref = null; // vom Lader gesetzte Commit-ID (roher String, kein JSON)
+    try { ref = localStorage.getItem('fl.ref'); } catch (e) {}
+    bg = PREVIEW ? bg : 'https://cdn.jsdelivr.net/gh/hando8488/frame_launcher@' + (ref || 'main') + '/app/' + bg;
+  }
+  $('stage').style.setProperty('--photo', 'url("' + bg + '")');
+  $('stage').classList.add('photo');
+}
+
 window.addEventListener('resize', fit);
+applyBackground();
 reclaimFromModule();
 try {
   ['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'ChannelUp', 'ChannelDown'].forEach(function (k) { tizen.tvinputdevice.registerKey(k); });
