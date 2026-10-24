@@ -25,7 +25,7 @@ Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/index
 ## Installation auf dem TV
 
 1. Repo auf GitHub veröffentlichen (öffentlich, damit jsDelivr es ausliefern kann).
-2. In TizenBrew → Module → hinzufügen: `gh/<github-user>/frame-launcher`
+2. In TizenBrew → Module → hinzufügen: `gh/hando8488/frame_launcher`
 3. TizenBrew → Einstellungen → Autostart-Modul: Frame Launcher
 4. Entwicklermodus am TV: Host-PC-IP auf `127.0.0.1` stellen (nötig für TizenBrews Autostart).
 5. TV: Einstellungen → Allgemein → Smart-Funktionen → „Letzte App automatisch starten“ an.
@@ -33,7 +33,7 @@ Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/index
 Beim ersten HDMI-/Art-Mode-Befehl fragt der TV, ob „Frame Launcher“ zugreifen darf → Zulassen.
 
 Nach Änderungen: `git push`, dann Cache leeren über
-`https://purge.jsdelivr.net/gh/<github-user>/frame-launcher@latest/app/index.html`
+`https://purge.jsdelivr.net/gh/hando8488/frame_launcher@latest/app/index.html`
 
 ## Lokale Vorschau
 
