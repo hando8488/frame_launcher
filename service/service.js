@@ -8,7 +8,9 @@
 //   GET /open?url=<url>             URL im Samsung-Browser öffnen
 //   GET /key?k=KEY_HDMI1&token=     Fernbedienungstaste senden
 //   GET /art?on=1&token=            Art Mode einschalten
-//   GET /feed?url=<rss-url>         RSS-Feed holen (für Feeds ohne CORS, z. B. ZEIT)
+//   GET /feed?url=<rss-url>         RSS-/iCal-Feed holen (für Quellen ohne CORS)
+//   GET /info, /log?msg=            Kalender-Link abholen, Meldungen der Seite protokollieren
+// Aus dem Heimnetz erreichbar: /ping und /setup (Kalender-Link eintragen, Log ansehen).
 'use strict';
 
 var http = require('http');
@@ -253,7 +255,17 @@ function fetchText(target, cb, hops) {
 
 // ---------- HTTP-Server ----------
 
+var started = new Date();
+var logLines = [];
+var calendarUrl = null; // per Einrichtungsseite gesetzt, Launcher übernimmt ihn in seinen Speicher
+
+function log(msg) {
+  logLines.push(new Date().toISOString().slice(11, 19) + ' ' + msg);
+  if (logLines.length > 60) logLines.shift();
+}
+
 function reply(res, err, data) {
+  if (err) log('Fehler: ' + (err.message || err));
   res.writeHead(err ? 500 : 200, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*'
@@ -261,13 +273,80 @@ function reply(res, err, data) {
   res.end(JSON.stringify(err ? { error: String(err.message || err) } : { ok: true, data: data, token: token }));
 }
 
+function lanAddresses() {
+  var out = [];
+  var ifs = require('os').networkInterfaces();
+  Object.keys(ifs).forEach(function (name) {
+    ifs[name].forEach(function (a) {
+      if (a.family === 'IPv4' && !a.internal) out.push(a.address);
+    });
+  });
+  return out;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+}
+
+function setupPage(res, note) {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
+    '<title>Frame Launcher</title>' +
+    '<style>body{font:16px system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;background:#0b0e14;color:#e8ebf2}' +
+    'input{width:100%;box-sizing:border-box;padding:12px;font-size:15px;border-radius:8px;border:1px solid #444;background:#151a24;color:#fff}' +
+    'button{margin-top:12px;padding:12px 20px;font-size:15px;border:0;border-radius:8px;background:#e8ebf2;color:#0b0e14}' +
+    'p,li{color:#9aa3b5;line-height:1.5}pre{background:#151a24;padding:12px;border-radius:8px;overflow:auto;font-size:12px}</style>' +
+    '<h1>Frame Launcher</h1>' + (note ? '<p style="color:#7fe0a0">' + escapeHtml(note) + '</p>' : '') +
+    '<h2>Familienkalender</h2>' +
+    '<p>Google Kalender → Einstellungen → Kalender „Familie“ → <b>Privatadresse im iCal-Format</b> kopieren und hier einfügen.</p>' +
+    '<form method="post" action="/setup"><input name="ical" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics">' +
+    '<button>Speichern</button></form>' +
+    '<p>Status: ' + (calendarUrl ? 'Link gesetzt – der Launcher übernimmt ihn innerhalb einer Minute.' : 'kein neuer Link') + '</p>' +
+    '<h2>Dienst</h2><p>läuft seit ' + started.toISOString().slice(0, 19).replace('T', ' ') + ' UTC · Node ' + process.version + '</p>' +
+    '<pre>' + escapeHtml(logLines.join('\n') || '(kein Log)') + '</pre>'
+  );
+}
+
+function readBody(req, cb) {
+  var body = '';
+  req.on('data', function (c) { body += c; if (body.length > 1e4) req.destroy(); });
+  req.on('end', function () { cb(require('querystring').parse(body)); });
+}
+
+function isLocal(req) {
+  var a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
 var server = http.createServer(function (req, res) {
   var u = url.parse(req.url, true);
   var q = u.query;
+
+  // Aus dem Heimnetz nur Ping, Status und Einrichtung – alles andere nur vom TV selbst.
+  if (u.pathname === '/setup' || u.pathname === '/') {
+    if (req.method === 'POST') {
+      return readBody(req, function (form) {
+        var link = String(form.ical || '').trim();
+        if (/^https:\/\/calendar\.google\.com\/calendar\/ical\//.test(link)) {
+          calendarUrl = link;
+          log('Kalender-Link gesetzt');
+          setupPage(res, 'Gespeichert.');
+        } else {
+          setupPage(res, 'Das sieht nicht nach einer Google-iCal-Adresse aus.');
+        }
+      });
+    }
+    return setupPage(res);
+  }
+  if (u.pathname === '/ping') return reply(res, null, 'pong');
+  if (!isLocal(req)) return reply(res, new Error('nur lokal'));
+
   if (q.token && !token) token = q.token;
   try {
     switch (u.pathname) {
-      case '/ping': return reply(res, null, 'pong');
+      case '/info': return reply(res, null, { ips: lanAddresses(), port: PORT, calendarUrl: calendarUrl });
+      case '/log': log('Seite: ' + q.msg); return reply(res, null);
       case '/apps': return listApps(function (e, apps) { reply(res, e, apps); });
       case '/launch': return launchApp(q.id, function (e) { reply(res, e); });
       case '/open': return openUrl(q.url, function (e) { reply(res, e); });
@@ -285,4 +364,5 @@ server.on('error', function (e) {
   // Läuft schon (z. B. nach Neustart des Moduls) – nichts zu tun.
   if (e.code !== 'EADDRINUSE') throw e;
 });
-server.listen(PORT, '127.0.0.1');
+server.listen(PORT, '0.0.0.0');
+log('Dienst gestartet');

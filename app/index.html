@@ -35,7 +35,27 @@
   /* ---------- Spalten ---------- */
   #stage { display: flex; }
   .left { width: 1060px; }
-  .right { width: 640px; margin-left: 60px; }
+  .right { position: relative; width: 640px; margin-left: 60px; }
+  .pane {
+    position: absolute; left: 0; top: 0; right: 0;
+    opacity: 0; transform: translateY(14px);
+    transition: opacity .5s ease, transform .5s ease;
+  }
+  .pane.show { opacity: 1; transform: none; }
+
+  /* ---------- Kalender ---------- */
+  .cal-head { display: flex; align-items: baseline; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .cal-head b { font-size: 44px; font-weight: 300; }
+  .cal-head span { margin-left: 16px; font-size: 20px; color: var(--muted); }
+  .cal-day { margin: 22px 0 4px; font-size: 18px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+  .cal-day.today { color: #7fb4ff; }
+  .ev { display: flex; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+  .ev i { width: 12px; height: 12px; border-radius: 50%; background: #c56ce8; margin-right: 18px; flex-shrink: 0; }
+  .ev .tm { width: 92px; flex-shrink: 0; font-size: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ev .ti { font-size: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev .loc { color: var(--muted); }
+  .cal-empty { margin-top: 28px; font-size: 22px; line-height: 1.5; color: var(--muted); }
+  .cal-empty b { color: var(--text); font-weight: 400; }
 
   #time { font-size: 156px; font-weight: 200; letter-spacing: -4px; line-height: 1; font-variant-numeric: tabular-nums; }
   #date { margin-top: 12px; font-size: 32px; color: var(--muted); font-weight: 400; }
@@ -188,8 +208,11 @@
   </div>
 
   <aside class="right">
-    <div id="weather"></div>
-    <div id="news"></div>
+    <div class="pane show" id="paneInfo">
+      <div id="weather"></div>
+      <div id="news"></div>
+    </div>
+    <div class="pane" id="paneCal"></div>
   </aside>
 
   <section class="overlay" id="browser">
@@ -219,6 +242,10 @@ var CONFIG = {
   weather: { name: 'Leipzig', lat: 51.34, lon: 12.37 },
 
   // Je die ersten 3 Einträge. proxy: true = über den TV-Dienst holen (Feed erlaubt keinen Browser-Abruf).
+  // Familienkalender: Link wird über http://<TV-IP>:8093/setup eingetragen (nicht hier – das Repo ist öffentlich).
+  calendar: { name: 'Familie', days: 14, maxRows: 11, rotateSeconds: 5 },
+
+  // Weitere Quellen (alle nur über den TV-Dienst): LVZ https://www.lvz.de/arc/outboundfeeds/rss/ · LZ https://www.l-iz.de/feed
   news: [
     { name: 'ZEIT ONLINE',        url: 'https://newsfeed.zeit.de/index', proxy: true },
     { name: 'The New York Times', url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml' }
@@ -365,7 +392,7 @@ function loadNews() {
   Promise.all(CONFIG.news.map(function (src) {
     return fetchFeed(src).then(parseFeed).then(function (list) {
       if (list.length) news[src.name] = list;
-    }).catch(function () {});
+    }).catch(function (e) { svcLog(src.name + ': ' + (e && e.message)); });
   })).then(function () {
     store.set('news', news);
     renderNews(news);
@@ -384,7 +411,192 @@ function loadWeather() {
   setTimeout(loadWeather, 30 * 60 * 1000);
 }
 
+// ---------- Familienkalender (privater iCal-Link von Google) ----------
+var DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+var MONTHS_SHORT = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.'];
+var WEEKDAY = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+function icsDate(v) {
+  var m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(v || '');
+  if (!m) return null;
+  if (m[7]) return new Date(Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  // TZID-Zeiten als Ortszeit lesen – der TV steht in derselben Zone wie der Kalender.
+  return new Date(+m[1], m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+}
+function icsText(v) { return v.replace(/\\n/gi, ' ').replace(/\\([,;\\])/g, '$1'); }
+
+function parseIcs(text) {
+  var lines = text.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+  var events = [];
+  var ev = null;
+  lines.forEach(function (line) {
+    if (line === 'BEGIN:VEVENT') { ev = { exdates: [] }; return; }
+    if (line === 'END:VEVENT') { if (ev && ev.start) events.push(ev); ev = null; return; }
+    if (!ev) return;
+    var i = line.indexOf(':');
+    if (i < 0) return;
+    var head = line.slice(0, i).split(';');
+    var value = line.slice(i + 1);
+    switch (head[0]) {
+      case 'DTSTART': ev.start = icsDate(value); ev.allDay = value.length === 8; break;
+      case 'DTEND': ev.end = icsDate(value); break;
+      case 'SUMMARY': ev.title = icsText(value); break;
+      case 'LOCATION': ev.location = icsText(value); break;
+      case 'RRULE': ev.rrule = value; break;
+      case 'UID': ev.uid = value; break;
+      case 'STATUS': ev.cancelled = value === 'CANCELLED'; break;
+      case 'RECURRENCE-ID': ev.recurrenceId = +icsDate(value); break;
+      case 'EXDATE': value.split(',').forEach(function (v) { ev.exdates.push(+icsDate(v)); }); break;
+    }
+  });
+  return events;
+}
+
+// Termine von ev im Zeitraum [from, to) – Wiederholungen DAILY/WEEKLY/MONTHLY/YEARLY mit INTERVAL, COUNT, UNTIL, BYDAY.
+function occurrences(ev, from, to) {
+  var s = ev.start;
+  var dur = ev.end ? ev.end - s : (ev.allDay ? 864e5 : 0);
+  if (!ev.rrule) return s < to && +s + dur > from ? [s] : [];
+  var r = {};
+  ev.rrule.split(';').forEach(function (p) { var kv = p.split('='); r[kv[0]] = kv[1]; });
+  var interval = +(r.INTERVAL || 1);
+  var count = r.COUNT ? +r.COUNT : Infinity;
+  var until = r.UNTIL ? icsDate(r.UNTIL) : null;
+  var byday = r.BYDAY ? r.BYDAY.split(',').map(function (d) { return WEEKDAY[d.slice(-2)]; }) : null;
+  var out = [], n = 0, guard = 0;
+  function at(y, mo, d) { return new Date(y, mo, d, s.getHours(), s.getMinutes(), s.getSeconds()); }
+  function emit(d) {
+    if ((until && d > until) || n >= count || d >= to) return false;
+    n++;
+    if (+d + dur > from && ev.exdates.indexOf(+d) < 0) out.push(d);
+    return true;
+  }
+  if (r.FREQ === 'WEEKLY') {
+    var days = (byday || [s.getDay()]).map(function (d) { return (d + 6) % 7; }).sort();
+    var monday = at(s.getFullYear(), s.getMonth(), s.getDate() - (s.getDay() + 6) % 7);
+    for (var w = 0; guard++ < 20000; w += interval) {
+      for (var i = 0; i < days.length; i++) {
+        var d = at(monday.getFullYear(), monday.getMonth(), monday.getDate() + w * 7 + days[i]);
+        if (d < s) continue;
+        if (!emit(d)) return out;
+      }
+    }
+  } else {
+    for (var k = 0; guard++ < 20000; k += interval) {
+      var d2 = r.FREQ === 'DAILY' ? at(s.getFullYear(), s.getMonth(), s.getDate() + k)
+        : r.FREQ === 'MONTHLY' ? at(s.getFullYear(), s.getMonth() + k, s.getDate())
+        : r.FREQ === 'YEARLY' ? at(s.getFullYear() + k, s.getMonth(), s.getDate())
+        : null;
+      if (!d2) return out;
+      if (r.FREQ !== 'DAILY' && d2.getDate() !== s.getDate()) continue; // z. B. 31. im Februar
+      if (byday && r.FREQ === 'DAILY' && byday.indexOf(d2.getDay()) < 0) continue;
+      if (!emit(d2)) return out;
+    }
+  }
+  return out;
+}
+
+function upcoming(events) {
+  var from = new Date();
+  var to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + CONFIG.calendar.days);
+  var moved = {};
+  events.forEach(function (e) { if (e.recurrenceId) moved[e.uid + '|' + e.recurrenceId] = true; });
+  var list = [];
+  events.forEach(function (e) {
+    if (e.cancelled) return;
+    var dur = e.end ? e.end - e.start : 0;
+    occurrences(e, from, to).forEach(function (d) {
+      if (e.rrule && !e.recurrenceId && moved[e.uid + '|' + (+d)]) return; // einzeln verschoben/geändert
+      list.push({ start: +d, end: +d + dur, allDay: !!e.allDay, title: e.title || '(ohne Titel)', location: e.location || '' });
+    });
+  });
+  return list.sort(function (a, b) { return a.start - b.start; });
+}
+
+function dayLabel(d) {
+  var today = new Date();
+  var diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 864e5);
+  if (diff <= 0) return 'Heute';
+  if (diff === 1) return 'Morgen';
+  return DAYS_SHORT[d.getDay()] + ', ' + d.getDate() + '. ' + MONTHS_SHORT[d.getMonth()];
+}
+
+function renderCalendar(list) {
+  var html = '<div class="cal-head"><b>' + escapeHtml(CONFIG.calendar.name) + '</b><span>nächste ' + CONFIG.calendar.days + ' Tage</span></div>';
+  if (!list) {
+    html += '<div class="cal-empty">Noch nicht eingerichtet.<br>Am Handy oder Mac öffnen:<br><b>http://' + (tvIp || '&lt;TV-IP&gt;') + ':8093/setup</b></div>';
+  } else if (!list.length) {
+    html += '<div class="cal-empty">Keine Termine.</div>';
+  } else {
+    var lastDay = '';
+    list.slice(0, CONFIG.calendar.maxRows).forEach(function (e) {
+      var d = new Date(e.start);
+      var label = dayLabel(d);
+      if (label !== lastDay) {
+        html += '<div class="cal-day' + (label === 'Heute' ? ' today' : '') + '">' + label + '</div>';
+        lastDay = label;
+      }
+      html += '<div class="ev"><i></i><div class="tm">' + (e.allDay ? 'ganzt.' : pad2(d.getHours()) + ':' + pad2(d.getMinutes())) + '</div>' +
+        '<div class="ti">' + escapeHtml(e.title) + (e.location ? ' <span class="loc">· ' + escapeHtml(e.location) + '</span>' : '') + '</div></div>';
+    });
+  }
+  $('paneCal').innerHTML = html;
+}
+
+var tvIp = '';
+function loadCalendar() {
+  setTimeout(loadCalendar, 10 * 60 * 1000);
+  return svc('/info').then(function (info) {
+    tvIp = info.ips && info.ips[0] || '';
+    if (info.calendarUrl && info.calendarUrl !== store.get('ical', '')) store.set('ical', info.calendarUrl);
+  }).catch(function () {}).then(function () {
+    var link = store.get('ical', '');
+    if (!link) return renderCalendar(null);
+    return svc('/feed?url=' + encodeURIComponent(link)).then(function (text) {
+      var list = upcoming(parseIcs(text));
+      store.set('cal', list);
+      renderCalendar(list);
+    }).catch(function (e) { svcLog('Kalender: ' + e.message); });
+  });
+}
+// Neu eingetragenen Link schnell übernehmen, ohne 10 Minuten zu warten.
+function watchSetup() {
+  if (store.get('ical', '')) return;
+  svc('/info').then(function (info) {
+    if (info.calendarUrl) { store.set('ical', info.calendarUrl); loadCalendar(); }
+    else setTimeout(watchSetup, 20000);
+  }).catch(function () { setTimeout(watchSetup, 60000); });
+}
+
+var paneTimer;
+function rotatePanes() {
+  var info = $('paneInfo'), cal = $('paneCal');
+  var showCal = !cal.classList.contains('show');
+  cal.classList.toggle('show', showCal);
+  info.classList.toggle('show', !showCal);
+  paneTimer = setTimeout(rotatePanes, CONFIG.calendar.rotateSeconds * 1000);
+}
+
 // ---------- TV-Anbindung ----------
+// Läuft der Hintergrunddienst? Wenn nicht, TizenBrew nach dem Grund fragen.
+function checkService() {
+  if (PREVIEW) return;
+  svc('/ping').catch(function () {
+    tbSocket().then(function (ws) {
+      ws.addEventListener('message', function (e) {
+        var msg;
+        try { msg = JSON.parse(e.data); } catch (x) { return; }
+        if (msg.type !== 7) return;
+        var mine = (msg.payload || []).filter(function (s) { return s.name.indexOf('frame_launcher') >= 0; })[0];
+        toast(!mine ? 'TV-Dienst nicht gestartet – TizenBrew neu öffnen'
+          : mine.hasCrashed ? 'TV-Dienst abgestürzt: ' + JSON.stringify(mine.error).slice(0, 80)
+          : 'TV-Dienst startet noch …');
+      });
+      ws.send(JSON.stringify({ type: 7 }));
+    }).catch(function () { toast('TV-Dienst und TizenBrew nicht erreichbar'); });
+  });
+}
+function svcLog(msg) { svc('/log?msg=' + encodeURIComponent(msg)).catch(function () {}); }
 function svc(path) {
   var token = store.get('token', '');
   return fetch(SERVICE + path + (path.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token))
@@ -429,11 +641,17 @@ function launchApp(tile) {
   var id = resolveAppId(tile);
   if (!id) return toast(tile.label + ' ist nicht installiert');
   if (PREVIEW) return toast('Start: ' + tile.label + ' (' + id + ')');
-  var direct = new Promise(function (ok, fail) {
-    if (!hasTizen()) return fail();
-    tizen.application.launch(id, ok, fail);
-  });
-  direct.catch(function () { return svc('/launch?id=' + encodeURIComponent(id)); })
+  // 1. TV-REST-API (zuverlässig für Store-Apps), 2. Tizen-API, 3. Hintergrunddienst
+  var storeIds = (tile.ids || []).filter(function (x) { return /^\d+$/.test(x); });
+  var rest = storeIds.length
+    ? fetch('http://127.0.0.1:8001/api/v2/applications/' + storeIds[0], { method: 'POST', mode: 'no-cors' })
+    : Promise.reject();
+  rest.catch(function () {
+    return new Promise(function (ok, fail) {
+      if (!hasTizen()) return fail();
+      tizen.application.launch(id, ok, fail);
+    });
+  }).catch(function () { return svc('/launch?id=' + encodeURIComponent(id)); })
     .catch(function () { toast(tile.label + ' konnte nicht gestartet werden'); });
 }
 function tvCommand(path, label) {
@@ -788,11 +1006,16 @@ fit();
 tickClock();
 renderWeather(store.get('weather', null)); // sofort aus Cache, dann frisch laden
 renderNews(store.get('news', null));
+renderCalendar(store.get('ical', '') ? store.get('cal', []) : null);
+paneTimer = setTimeout(rotatePanes, CONFIG.calendar.rotateSeconds * 1000);
 renderTiles(0);
 updateHint();
 loadWeather();
 loadNews();
 loadApps();
+loadCalendar();
+watchSetup();
+checkService();
 </script>
 </body>
 </html>
