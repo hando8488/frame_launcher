@@ -2,7 +2,7 @@
 
 Schneller Startbildschirm für Samsung The Frame als [TizenBrew](https://github.com/reisxd/TizenBrew)-Modul.
 
-- Große Kacheln: Prime Video, YouTube, PS5 (HDMI 1), Spotify, Internet
+- Kacheln: Prime Video, YouTube, PS5 (HDMI 1), Spotify, Das Erste & ZDF live, TizenPortal
 - Uhrzeit, Wetter Leipzig (heute + 2 Tage, Open-Meteo)
 - Art Mode per Knopf
 - Komplett ohne Framework, eine Datei (`app/index.html`)
@@ -17,7 +17,8 @@ Schneller Startbildschirm für Samsung The Frame als [TizenBrew](https://github.
 | Grün       | (im Bearbeiten) installierte App hinzufügen |
 | Gelb       | (im Bearbeiten) Kachel entfernen           |
 | Blau       | (im Bearbeiten) auf Standard zurücksetzen  |
-| Zurück     | Overlay schließen                          |
+| Zurück     | Overlay / Player schließen                 |
+| ▲▼ / P+ P- | (im Live-Player) Sender wechseln           |
 
 Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/index.html` im `CONFIG`-Block.
 Änderungen am TV (Reihenfolge, hinzugefügte Apps) werden lokal auf dem TV gespeichert.
@@ -29,6 +30,8 @@ Feste Einstellungen (Kacheln, Lesezeichen, Wetter-Ort) stehen oben in `app/index
 3. TizenBrew → Einstellungen → Autostart-Modul: Frame Launcher
 4. Entwicklermodus am TV: Host-PC-IP auf `127.0.0.1` stellen (nötig für TizenBrews Autostart).
 5. TV: Einstellungen → Allgemein → Smart-Funktionen → „Letzte App automatisch starten“ an.
+
+TizenPortal muss in TizenBrew als GitHub-Modul `axelnanol/tizenportal` hinzugefügt sein.
 
 Beim ersten HDMI-/Art-Mode-Befehl fragt der TV, ob „Frame Launcher“ zugreifen darf → Zulassen.
 
