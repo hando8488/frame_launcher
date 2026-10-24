@@ -285,7 +285,7 @@ var CONFIG = {
 };
 // =====================================================================
 
-var VERSION = '0.8.0';
+var VERSION = '0.8.1';
 var SERVICE = 'http://127.0.0.1:8093';
 var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406, CH_UP: 427, CH_DOWN: 428 };
 var PREVIEW = location.protocol === 'file:' || location.search.indexOf('preview') >= 0;
@@ -639,6 +639,7 @@ function resolveAppId(tile) {
   var match = (tile.match || '').toLowerCase();
   for (var i = 0; i < installed.length; i++) {
     var a = installed[i];
+    if (/dummy/i.test(a.id)) continue; // Samsungs vorinstallierte Platzhalter, starten nichts
     if ((tile.ids && tile.ids.indexOf(a.id) >= 0) || (match && a.name.toLowerCase().indexOf(match) >= 0)) return a.id;
   }
   return tile.ids && tile.ids[0];

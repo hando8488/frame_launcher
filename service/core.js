@@ -207,13 +207,22 @@ function listApps(cb) {
 
 // TV-REST-API: POST /api/v2/applications/<Store-ID> startet die App (wie die Smartphone-Fernbedienung).
 function restLaunch(storeId, cb) {
-  var req = http.request({ host: '127.0.0.1', port: 8001, method: 'POST', path: '/api/v2/applications/' + storeId }, function (r) {
-    r.resume();
-    cb(r.statusCode >= 200 && r.statusCode < 300 ? null : new Error('REST ' + r.statusCode));
-  });
-  req.setTimeout(4000, function () { req.abort(); });
-  req.on('error', cb);
-  req.end();
+  // Über die eigene LAN-Adresse – von 127.0.0.1 aus antwortet der TV mit 401.
+  var hosts = lanAddresses().concat(['127.0.0.1']);
+  (function next(i, lastErr) {
+    if (i >= hosts.length) return cb(lastErr);
+    var finished = false;
+    var req = http.request({ host: hosts[i], port: 8001, method: 'POST', path: '/api/v2/applications/' + storeId }, function (r) {
+      r.resume();
+      finished = true;
+      if (r.statusCode >= 200 && r.statusCode < 300) return cb(null);
+      next(i + 1, new Error('REST ' + hosts[i] + ' ' + r.statusCode));
+    });
+    // Der TV startet die App oft, ohne zu antworten – Zeitüberschreitung gilt als Erfolg.
+    req.setTimeout(3000, function () { if (finished) return; finished = true; req.abort(); log('REST ' + hosts[i] + ': keine Antwort, vermutlich gestartet'); cb(null); });
+    req.on('error', function (e) { if (finished) return; finished = true; next(i + 1, e); });
+    req.end();
+  })(0);
 }
 
 function launchApp(id, storeId, cb) {
