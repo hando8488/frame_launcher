@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Frame Launcher</title>
+<style>
+  /* Performance-Regeln für die TV-Engine (Chromium ~69):
+     nur transform/opacity animieren, keine Filter/Blur, keine Flex-Gaps, kein ?. / ?? im JS. */
+  :root {
+    --bg: #06080d;
+    --text: #f2f4f8;
+    --muted: #8a93a6;
+    --line: rgba(255, 255, 255, .08);
+    --card: rgba(255, 255, 255, .045);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+  body {
+    color: var(--text);
+    font-family: "SamsungOneUI", "SamsungOne", "Samsung Sans", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage {
+    position: absolute; left: 0; top: 0;
+    width: 1920px; height: 1080px;
+    padding: 72px 80px 56px;
+    transform-origin: 0 0;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, rgba(64, 92, 160, .22), transparent 60%),
+      radial-gradient(900px 600px at -5% 110%, rgba(120, 60, 160, .16), transparent 60%),
+      var(--bg);
+  }
+
+  /* ---------- Kopfzeile ---------- */
+  header { display: flex; justify-content: space-between; align-items: flex-end; height: 250px; }
+  #time { font-size: 168px; font-weight: 200; letter-spacing: -4px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #date { margin-top: 14px; font-size: 34px; color: var(--muted); font-weight: 400; }
+
+  #weather { display: flex; align-items: stretch; }
+  .now { display: flex; align-items: center; padding-right: 44px; margin-right: 16px; border-right: 1px solid var(--line); }
+  .now svg { width: 96px; height: 96px; margin-right: 22px; }
+  .now .temp { font-size: 92px; font-weight: 200; line-height: 1; }
+  .now .desc { margin-top: 8px; font-size: 24px; color: var(--muted); }
+  .day {
+    width: 168px; margin-left: 16px; padding: 22px 0 20px;
+    border-radius: 24px; background: var(--card); text-align: center;
+  }
+  .day .name { font-size: 24px; color: var(--muted); }
+  .day svg { width: 60px; height: 60px; margin: 12px 0 8px; }
+  .day .range { font-size: 28px; }
+  .day .range span { color: var(--muted); }
+  .day .rain { margin-top: 6px; font-size: 20px; color: #7fb4ff; }
+  .wx { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .wx .sun { stroke: #ffd36b; }
+  .wx .drop { stroke: #7fb4ff; }
+  .wx .bolt { stroke: #ffd36b; }
+
+  /* ---------- Kacheln ---------- */
+  #tiles {
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 5), 1fr);
+    grid-gap: 36px;
+    margin-top: 84px;
+    height: 460px;
+  }
+  .tile {
+    position: relative; overflow: hidden;
+    border-radius: 32px;
+    padding: 40px 40px 36px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    background: linear-gradient(150deg, var(--c1), var(--c2));
+    transition: transform .16s ease-out;
+    will-change: transform;
+  }
+  .tile::before { /* weicher Lichtschein oben – statisch, kostet nichts */
+    content: ""; position: absolute; left: 0; top: 0; right: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
+    pointer-events: none;
+  }
+  .tile::after { /* Fokusrahmen: nur Opacity wird animiert */
+    content: ""; position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+    border-radius: 32px; border: 5px solid #fff;
+    opacity: 0; transition: opacity .16s ease-out;
+  }
+  .tile.focus { transform: scale(1.06); }
+  .tile.focus::after { opacity: 1; }
+  .tile .glyph { position: relative; width: 104px; height: 104px; fill: #fff; opacity: .95; }
+  .tile .label { position: relative; font-size: 44px; font-weight: 600; line-height: 1.1; }
+  .tile .sub { position: relative; margin-top: 8px; font-size: 26px; opacity: .78; }
+  .small .tile .label { font-size: 34px; }
+  .small .tile .glyph { width: 80px; height: 80px; }
+
+  .editing .tile { transition: none; }
+  .editing .tile::after { opacity: .35; border-style: dashed; }
+  .editing .tile.focus::after { opacity: 1; border-style: solid; border-color: #ffd36b; }
+
+  /* ---------- Fußzeile ---------- */
+  footer { display: flex; margin-top: 64px; }
+  .pill {
+    display: flex; align-items: center;
+    height: 72px; padding: 0 34px; margin-right: 20px;
+    border-radius: 36px; background: var(--card);
+    font-size: 26px; color: #c9d0dd;
+    transition: transform .14s ease-out, background-color .14s ease-out;
+  }
+  .pill svg { width: 30px; height: 30px; margin-right: 14px; }
+  .pill.focus { background: #f2f4f8; color: #0b0e14; transform: scale(1.05); }
+  #hint { margin-left: auto; align-self: center; font-size: 22px; color: var(--muted); }
+  .dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin: 0 6px 0 22px; vertical-align: -1px; }
+
+  /* ---------- Overlays ---------- */
+  .overlay {
+    position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+    background: rgba(4, 6, 10, .94);
+    padding: 120px 160px;
+    display: none;
+  }
+  .overlay.open { display: block; }
+  .overlay h2 { font-size: 56px; font-weight: 300; margin-bottom: 40px; }
+  .overlay h2 span { color: var(--muted); font-size: 28px; margin-left: 20px; }
+  #url {
+    width: 100%; height: 104px; padding: 0 40px;
+    border-radius: 52px; border: 3px solid transparent;
+    background: rgba(255, 255, 255, .08); color: var(--text);
+    font: inherit; font-size: 38px; outline: none;
+  }
+  #url.focus { border-color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; margin-top: 36px; }
+  .chips .pill { margin: 0 20px 20px 0; height: 84px; font-size: 30px; padding: 0 40px; }
+  #pickerList { max-height: 760px; overflow: hidden; }
+
+  #toast {
+    position: absolute; left: 50%; bottom: 60px;
+    transform: translate(-50%, 20px); opacity: 0;
+    padding: 22px 40px; border-radius: 40px;
+    background: #f2f4f8; color: #0b0e14; font-size: 26px;
+    transition: opacity .2s, transform .2s;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header>
+    <div>
+      <div id="time">--:--</div>
+      <div id="date"></div>
+    </div>
+    <div id="weather"></div>
+  </header>
+
+  <main id="tiles"></main>
+
+  <footer>
+    <div class="pill f" data-action="art"><svg viewBox="0 0 24 24" class="wx"><rect x="3" y="4" width="18" height="14" rx="1.5"/><path d="M7 15l3.5-4 2.5 3 2-2 2 3"/></svg>Art Mode</div>
+    <div class="pill f" data-action="edit"><svg viewBox="0 0 24 24" class="wx"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Bearbeiten</div>
+    <div class="pill f" data-action="reload"><svg viewBox="0 0 24 24" class="wx"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Neu laden</div>
+    <div id="hint"></div>
+  </footer>
+
+  <section class="overlay" id="browser">
+    <h2>Internet <span>Adresse oder Suchbegriff · Öffnet im Samsung-Browser</span></h2>
+    <input id="url" class="f" type="text" autocomplete="off" spellcheck="false" placeholder="z. B. tagesschau.de">
+    <div class="chips" id="bookmarks"></div>
+  </section>
+
+  <section class="overlay" id="picker">
+    <h2>App hinzufügen <span>OK wählt · Zurück schließt</span></h2>
+    <div class="chips" id="pickerList"></div>
+  </section>
+
+  <div id="toast"></div>
+</div>
+
+<script>
+// =====================================================================
+//  KONFIGURATION – hier anpassen
+// =====================================================================
+var CONFIG = {
+  weather: { name: 'Leipzig', lat: 51.34, lon: 12.37 },
+
+  // type: 'app'     – match = Teil des App-Namens, ids = bekannte App-/Store-IDs (Fallback)
+  //       'key'     – sendet eine Fernbedienungstaste (z. B. KEY_HDMI1)
+  //       'browser' – öffnet die Adresseingabe
+  tiles: [
+    { id: 'prime',   type: 'app', label: 'Prime Video', match: 'prime video', ids: ['3201512006785'], glyph: 'play',   c1: '#1aa7e8', c2: '#0b4f86' },
+    { id: 'youtube', type: 'app', label: 'YouTube',     match: 'youtube',     ids: ['111299001912'],  glyph: 'tube',   c1: '#ff2a45', c2: '#8f0618' },
+    { id: 'ps5',     type: 'key', label: 'PlayStation 5', sub: 'HDMI 1', key: 'KEY_HDMI1',              glyph: 'pad',    c1: '#2a63ff', c2: '#0c1d6b' },
+    { id: 'spotify', type: 'app', label: 'Spotify',     match: 'spotify',     ids: ['3201606009684'], glyph: 'wave',   c1: '#22d468', c2: '#0b5e2c' },
+    { id: 'browser', type: 'browser', label: 'Internet', sub: 'Suchen & Lesezeichen',                  glyph: 'globe',  c1: '#8d63f5', c2: '#3a1883' }
+  ],
+
+  bookmarks: [
+    { label: 'Google',      url: 'https://www.google.de' },
+    { label: 'Tagesschau',  url: 'https://www.tagesschau.de' },
+    { label: 'LVZ',         url: 'https://www.lvz.de' },
+    { label: 'MDR',         url: 'https://www.mdr.de' },
+    { label: 'Wikipedia',   url: 'https://de.wikipedia.org' },
+    { label: 'Spiegel',     url: 'https://www.spiegel.de' }
+  ]
+};
+// =====================================================================
+
+var SERVICE = 'http://127.0.0.1:8093';
+var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406 };
+var PREVIEW = location.protocol === 'file:' || location.search.indexOf('preview') >= 0;
+
+var $ = function (id) { return document.getElementById(id); };
+var store = {
+  get: function (k, d) { try { var v = localStorage.getItem('fl.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set: function (k, v) { try { localStorage.setItem('fl.' + k, JSON.stringify(v)); } catch (e) {} }
+};
+
+// ---------- Icons ----------
+var GLYPHS = {
+  play:  '<path d="M7 4.5v15l12.5-7.5z"/>',
+  tube:  '<path fill-rule="evenodd" d="M5 5h14a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4zm5 3.8v6.4l5.6-3.2z"/>',
+  pad:   '<path fill-rule="evenodd" d="M7.5 6h9a5.5 5.5 0 0 1 5.3 4l1 4.2a3.3 3.3 0 0 1-5.6 3L15.7 16H8.3l-1.5 1.2a3.3 3.3 0 0 1-5.6-3l1-4.2A5.5 5.5 0 0 1 7.5 6zM7 8.8v1.7H5.3v1.6H7v1.7h1.6v-1.7h1.7v-1.6H8.6V8.8zm9.6.4a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm-1.9 1.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2zm3.8 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z"/>',
+  wave:  '<path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21zm4.8 15.1a.8.8 0 0 0-.3-1.1c-2.7-1.6-6-2-9.6-1.2a.8.8 0 1 0 .3 1.6c3.2-.7 6.1-.4 8.5 1a.8.8 0 0 0 1.1-.3zm1.3-3a1 1 0 0 0-.3-1.4c-3.2-2-7.9-2.5-11.6-1.4a1 1 0 0 0 .6 1.9c3.2-1 7.4-.5 10 1.2a1 1 0 0 0 1.3-.3zm.1-3.1a1.2 1.2 0 0 0-.4-1.6C14 6.6 8.6 6.4 5.4 7.4a1.2 1.2 0 1 0 .7 2.3c2.8-.9 7.6-.7 10.5 1.1a1.2 1.2 0 0 0 1.6-.3z"/>',
+  globe: '<path fill-rule="evenodd" d="M12 1.5a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21zM9.3 3.9A8.6 8.6 0 0 0 3.5 11h3.6c.1-2.6.8-5 2.2-7.1zm5.4 0c1.4 2.1 2.1 4.5 2.2 7.1h3.6a8.6 8.6 0 0 0-5.8-7.1zM12 4.1c-1.5 1.9-2.3 4.3-2.4 6.9h4.8c-.1-2.6-.9-5-2.4-6.9zM3.5 13a8.6 8.6 0 0 0 5.8 7.1c-1.4-2.1-2.1-4.5-2.2-7.1zm6.1 0c.1 2.6.9 5 2.4 6.9 1.5-1.9 2.3-4.3 2.4-6.9zm7.3 0c-.1 2.6-.8 5-2.2 7.1a8.6 8.6 0 0 0 5.8-7.1z"/>',
+  app:   '<path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/>'
+};
+var CLOUD = '<path d="M7 19h10.5a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 19z"/>';
+var CLOUD_UP = '<path d="M7 15h10.5a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 15z"/>';
+var WX = {
+  sun:    '<g class="sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g>',
+  partly: '<g class="sun"><circle cx="8.5" cy="8.5" r="3.2"/><path d="M8.5 2v1.5M2 8.5h1.5M3.9 3.9l1 1M13.1 3.9l-1 1"/></g><path d="M9 20h9a3.5 3.5 0 0 0 .2-7 5 5 0 0 0-9.7 1.3A2.9 2.9 0 0 0 9 20z"/>',
+  cloud:  CLOUD,
+  fog:    '<path d="M4 9h16M3 13h18M5 17h14"/>',
+  rain:   CLOUD_UP + '<path class="drop" d="M8 18l-1 2.5M12 18l-1 2.5M16 18l-1 2.5"/>',
+  snow:   CLOUD_UP + '<path class="drop" d="M8 19h.01M12 20.5h.01M16 19h.01M10 22h.01M14 22h.01" stroke-width="2.4"/>',
+  storm:  CLOUD_UP + '<path class="bolt" d="M12.5 15l-2 3.5h3l-2 3.5"/>'
+};
+function wxIcon(kind) { return '<svg viewBox="0 0 24 24" class="wx">' + WX[kind] + '</svg>'; }
+function wxKind(code) {
+  if (code === 0) return ['sun', 'Klar'];
+  if (code <= 2) return ['partly', 'Heiter'];
+  if (code === 3) return ['cloud', 'Bedeckt'];
+  if (code <= 48) return ['fog', 'Nebel'];
+  if (code <= 57) return ['rain', 'Nieselregen'];
+  if (code <= 67) return ['rain', 'Regen'];
+  if (code <= 77) return ['snow', 'Schnee'];
+  if (code <= 82) return ['rain', 'Schauer'];
+  if (code <= 86) return ['snow', 'Schneeschauer'];
+  return ['storm', 'Gewitter'];
+}
+
+// ---------- Uhr ----------
+var DAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+var MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function tickClock() {
+  var d = new Date();
+  $('time').textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  $('date').textContent = DAYS[d.getDay()] + ', ' + d.getDate() + '. ' + MONTHS[d.getMonth()];
+  setTimeout(tickClock, 60000 - d.getSeconds() * 1000 - d.getMilliseconds() + 50);
+}
+
+// ---------- Wetter (Open-Meteo, ohne API-Key) ----------
+function renderWeather(w) {
+  if (!w || !w.daily) return;
+  var now = wxKind(w.current.weather_code);
+  var html = '<div class="now">' + wxIcon(now[0]) +
+    '<div><div class="temp">' + Math.round(w.current.temperature_2m) + '°</div>' +
+    '<div class="desc">' + CONFIG.weather.name + ' · ' + now[1] + '</div></div></div>';
+  for (var i = 0; i < 3; i++) {
+    var date = new Date(w.daily.time[i] + 'T12:00:00');
+    var name = i === 0 ? 'Heute' : i === 1 ? 'Morgen' : DAYS[date.getDay()];
+    var rain = w.daily.precipitation_probability_max[i];
+    html += '<div class="day"><div class="name">' + name + '</div>' +
+      wxIcon(wxKind(w.daily.weather_code[i])[0]) +
+      '<div class="range">' + Math.round(w.daily.temperature_2m_max[i]) + '° <span>' + Math.round(w.daily.temperature_2m_min[i]) + '°</span></div>' +
+      '<div class="rain">' + (rain == null ? '' : rain + ' %') + '</div></div>';
+  }
+  $('weather').innerHTML = html;
+}
+function loadWeather() {
+  var c = CONFIG.weather;
+  fetch('https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+    '&current=temperature_2m,weather_code' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    '&timezone=Europe%2FBerlin&forecast_days=3')
+    .then(function (r) { return r.json(); })
+    .then(function (w) { store.set('weather', w); renderWeather(w); })
+    .catch(function () {});
+  setTimeout(loadWeather, 30 * 60 * 1000);
+}
+
+// ---------- TV-Anbindung ----------
+function svc(path) {
+  var token = store.get('token', '');
+  return fetch(SERVICE + path + (path.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token))
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j.token) store.set('token', j.token);
+      if (j.error) throw new Error(j.error);
+      return j.data;
+    });
+}
+function hasTizen() { return !!(window.tizen && tizen.application); }
+
+var installed = store.get('apps', []);
+function loadApps() {
+  var p;
+  if (hasTizen()) {
+    p = new Promise(function (ok, fail) {
+      tizen.application.getAppsInfo(function (list) {
+        ok(list.filter(function (a) { return a.show; }).map(function (a) { return { id: a.id, name: a.name }; }));
+      }, fail);
+    });
+  } else if (PREVIEW) {
+    p = Promise.resolve([{ id: 'a.prime', name: 'Prime Video' }, { id: 'b.yt', name: 'YouTube' }, { id: 'c.sp', name: 'Spotify' },
+      { id: 'd.ard', name: 'ARD Mediathek' }, { id: 'e.zdf', name: 'ZDFmediathek' }, { id: 'f.dis', name: 'Disney+' }, { id: 'g.net', name: 'Netflix' }]);
+  } else {
+    p = svc('/apps');
+  }
+  return p.then(function (list) {
+    installed = list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    store.set('apps', installed);
+  }).catch(function () {});
+}
+function resolveAppId(tile) {
+  var match = (tile.match || '').toLowerCase();
+  for (var i = 0; i < installed.length; i++) {
+    var a = installed[i];
+    if ((tile.ids && tile.ids.indexOf(a.id) >= 0) || (match && a.name.toLowerCase().indexOf(match) >= 0)) return a.id;
+  }
+  return tile.ids && tile.ids[0];
+}
+function launchApp(tile) {
+  var id = resolveAppId(tile);
+  if (!id) return toast(tile.label + ' ist nicht installiert');
+  if (PREVIEW) return toast('Start: ' + tile.label + ' (' + id + ')');
+  var direct = new Promise(function (ok, fail) {
+    if (!hasTizen()) return fail();
+    tizen.application.launch(id, ok, fail);
+  });
+  direct.catch(function () { return svc('/launch?id=' + encodeURIComponent(id)); })
+    .catch(function () { toast(tile.label + ' konnte nicht gestartet werden'); });
+}
+function tvCommand(path, label) {
+  if (PREVIEW) return toast(label);
+  toast(label + ' …');
+  svc(path).catch(function (e) {
+    toast(/erlaubt/.test(e.message) ? 'Bitte die Verbindung am TV erlauben' : label + ' fehlgeschlagen');
+  });
+}
+function openUrl(input) {
+  var v = input.trim();
+  if (!v) return;
+  var target = /\s/.test(v) || v.indexOf('.') < 0
+    ? 'https://www.google.de/search?q=' + encodeURIComponent(v)
+    : (/^https?:\/\//.test(v) ? v : 'https://' + v);
+  closeOverlay();
+  if (PREVIEW) return toast('Öffne ' + target);
+  var direct = new Promise(function (ok, fail) {
+    if (!hasTizen() || !window.tizen.ApplicationControl) return fail();
+    var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', target);
+    tizen.application.launchAppControl(ctrl, 'org.tizen.browser', ok, fail);
+  });
+  direct.catch(function () { return svc('/open?url=' + encodeURIComponent(target)); })
+    .catch(function () { toast('Browser konnte nicht geöffnet werden'); });
+}
+
+// ---------- Kacheln ----------
+var tiles = store.get('tiles', null) || CONFIG.tiles.slice();
+var editing = false;
+
+function hueColors(name) {
+  var h = 0;
+  for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return ['hsl(' + h + ',62%,52%)', 'hsl(' + ((h + 20) % 360) + ',70%,22%)'];
+}
+function renderTiles(focusIndex) {
+  var el = $('tiles');
+  var cols = Math.max(4, Math.min(tiles.length, 7));
+  el.style.setProperty('--cols', cols);
+  el.className = cols > 5 ? 'small' : '';
+  el.innerHTML = tiles.map(function (t, i) {
+    var colors = t.c1 ? [t.c1, t.c2] : hueColors(t.label);
+    return '<div class="tile f" data-tile="' + i + '" style="--c1:' + colors[0] + ';--c2:' + colors[1] + '">' +
+      '<svg class="glyph" viewBox="0 0 24 24">' + (GLYPHS[t.glyph] || GLYPHS.app) + '</svg>' +
+      '<div><div class="label">' + escapeHtml(t.label) + '</div>' + (t.sub ? '<div class="sub">' + escapeHtml(t.sub) + '</div>' : '') + '</div></div>';
+  }).join('');
+  if (focusIndex != null) setFocus(el.children[Math.min(focusIndex, tiles.length - 1)]);
+}
+function saveTiles() { store.set('tiles', tiles); }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+function activateTile(t) {
+  if (t.type === 'app') launchApp(t);
+  else if (t.type === 'key') tvCommand('/key?k=' + t.key, t.label);
+  else if (t.type === 'browser') openOverlay('browser');
+}
+
+function setEditing(on) {
+  editing = on;
+  $('stage').className = on ? 'editing' : '';
+  updateHint();
+}
+function updateHint() {
+  $('hint').innerHTML = editing
+    ? '◀ ▶ verschieben<span class="dot" style="background:#e5484d"></span>fertig<span class="dot" style="background:#30a46c"></span>App hinzufügen<span class="dot" style="background:#f5d90a"></span>entfernen<span class="dot" style="background:#3e63dd"></span>zurücksetzen'
+    : '<span class="dot" style="background:#e5484d;margin-left:0"></span>bearbeiten';
+}
+
+// ---------- Fokus & Navigation ----------
+var focused = null;
+var overlay = null;
+
+function setFocus(el) {
+  if (!el) return;
+  if (focused) focused.classList.remove('focus');
+  focused = el;
+  el.classList.add('focus');
+}
+function layer() { return overlay ? $(overlay) : $('stage'); }
+function candidates() {
+  var all = layer().querySelectorAll('.f');
+  var out = [];
+  for (var i = 0; i < all.length; i++) {
+    if (!overlay && all[i].closest('.overlay')) continue;
+    out.push(all[i]);
+  }
+  return out;
+}
+function move(dir) {
+  var list = candidates();
+  if (!focused || list.indexOf(focused) < 0) return setFocus(list[0]);
+  var a = focused.getBoundingClientRect();
+  var ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  var best = null, bestScore = Infinity;
+  list.forEach(function (el) {
+    if (el === focused) return;
+    var b = el.getBoundingClientRect();
+    var dx = b.left + b.width / 2 - ax, dy = b.top + b.height / 2 - ay;
+    var main = dir === 'L' ? -dx : dir === 'R' ? dx : dir === 'U' ? -dy : dy;
+    var cross = dir === 'L' || dir === 'R' ? Math.abs(dy) : Math.abs(dx);
+    if (main <= 1) return;
+    var score = main + cross * 2;
+    if (score < bestScore) { bestScore = score; best = el; }
+  });
+  if (best) setFocus(best);
+}
+
+function openOverlay(id) {
+  overlay = id;
+  $(id).classList.add('open');
+  if (id === 'browser') {
+    $('bookmarks').innerHTML = CONFIG.bookmarks.map(function (b) {
+      return '<div class="pill f" data-url="' + escapeHtml(b.url) + '">' + escapeHtml(b.label) + '</div>';
+    }).join('');
+    $('url').value = '';
+    setFocus($('url'));
+  } else if (id === 'picker') {
+    $('pickerList').innerHTML = installed.length
+      ? installed.map(function (a, i) { return '<div class="pill f" data-app="' + i + '">' + escapeHtml(a.name) + '</div>'; }).join('')
+      : '<div class="pill">Keine App-Liste verfügbar</div>';
+    setFocus($('pickerList').querySelector('.f'));
+  }
+}
+function closeOverlay() {
+  if (!overlay) return;
+  $(overlay).classList.remove('open');
+  if (document.activeElement) document.activeElement.blur();
+  overlay = null;
+  setFocus($('tiles').children[0]);
+}
+
+function ok() {
+  if (!focused) return;
+  var d = focused.dataset;
+  if (focused.id === 'url') { focused.focus(); return; }
+  if (d.url) return openUrl(d.url);
+  if (d.app != null) {
+    var a = installed[+d.app];
+    tiles.push({ id: a.id, type: 'app', label: a.name, ids: [a.id], match: a.name.toLowerCase() });
+    saveTiles();
+    closeOverlay();
+    renderTiles(tiles.length - 1);
+    return;
+  }
+  if (d.tile != null) { if (!editing) activateTile(tiles[+d.tile]); return; }
+  if (d.action === 'art') tvCommand('/art?on=1', 'Art Mode');
+  if (d.action === 'edit') setEditing(!editing);
+  if (d.action === 'reload') location.reload();
+}
+
+function shiftTile(delta) {
+  var i = +focused.dataset.tile, j = i + delta;
+  if (j < 0 || j >= tiles.length) return;
+  var t = tiles[i]; tiles[i] = tiles[j]; tiles[j] = t;
+  saveTiles();
+  renderTiles(j);
+}
+
+document.addEventListener('keydown', function (e) {
+  var k = e.keyCode;
+  var inInput = document.activeElement && document.activeElement.id === 'url';
+
+  if (inInput) {
+    if (k === KEY.OK) { e.preventDefault(); openUrl($('url').value); return; }
+    if (k === KEY.UP || k === KEY.DOWN) { $('url').blur(); }
+    else if (k === KEY.BACK || k === 27) { $('url').blur(); e.preventDefault(); return; }
+    else return;
+  }
+
+  var onTile = focused && focused.dataset.tile != null;
+  switch (k) {
+    case KEY.LEFT:  e.preventDefault(); if (editing && onTile) shiftTile(-1); else move('L'); break;
+    case KEY.RIGHT: e.preventDefault(); if (editing && onTile) shiftTile(1); else move('R'); break;
+    case KEY.UP:    e.preventDefault(); move('U'); break;
+    case KEY.DOWN:  e.preventDefault(); move('D'); break;
+    case KEY.OK:    e.preventDefault(); ok(); break;
+    case KEY.BACK: case 27: case 8:
+      e.preventDefault();
+      if (overlay) closeOverlay(); else if (editing) setEditing(false);
+      break;
+    case KEY.RED: case 112: setEditing(!editing); break;
+    case KEY.GREEN: case 113: if (editing) loadApps().then(function () { openOverlay('picker'); }); break;
+    case KEY.YELLOW: case 114:
+      if (editing && onTile) { tiles.splice(+focused.dataset.tile, 1); saveTiles(); renderTiles(+focused.dataset.tile); }
+      break;
+    case KEY.BLUE: case 115:
+      if (editing) { tiles = CONFIG.tiles.slice(); saveTiles(); renderTiles(0); toast('Kacheln zurückgesetzt'); }
+      break;
+  }
+});
+
+// ---------- Toast ----------
+var toastTimer;
+function toast(msg) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+}
+
+// ---------- Start ----------
+function fit() {
+  var s = window.innerWidth / 1920;
+  $('stage').style.transform = Math.abs(s - 1) < 0.01 ? '' : 'scale(' + s + ')';
+}
+window.addEventListener('resize', fit);
+fit();
+tickClock();
+renderWeather(store.get('weather', null)); // sofort aus Cache, dann frisch laden
+renderTiles(0);
+updateHint();
+loadWeather();
+loadApps();
+</script>
+</body>
+</html>
