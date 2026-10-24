@@ -32,25 +32,46 @@
       var(--bg);
   }
 
-  /* ---------- Kopfzeile ---------- */
-  header { display: flex; justify-content: space-between; align-items: flex-end; height: 250px; }
-  #time { font-size: 168px; font-weight: 200; letter-spacing: -4px; line-height: 1; font-variant-numeric: tabular-nums; }
-  #date { margin-top: 14px; font-size: 34px; color: var(--muted); font-weight: 400; }
+  /* ---------- Spalten ---------- */
+  #stage { display: flex; }
+  .left { width: 1060px; }
+  .right { width: 640px; margin-left: 60px; }
 
-  #weather { display: flex; align-items: stretch; }
-  .now { display: flex; align-items: center; padding-right: 44px; margin-right: 16px; border-right: 1px solid var(--line); }
-  .now svg { width: 96px; height: 96px; margin-right: 22px; }
-  .now .temp { font-size: 92px; font-weight: 200; line-height: 1; }
-  .now .desc { margin-top: 8px; font-size: 24px; color: var(--muted); }
+  #time { font-size: 156px; font-weight: 200; letter-spacing: -4px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #date { margin-top: 12px; font-size: 32px; color: var(--muted); font-weight: 400; }
+
+  /* ---------- Wetter ---------- */
+  .now { display: flex; align-items: center; padding: 6px 0 24px; border-bottom: 1px solid var(--line); }
+  .now svg { width: 84px; height: 84px; margin-right: 22px; }
+  .now .temp { font-size: 84px; font-weight: 200; line-height: 1; }
+  .now .desc { margin-top: 6px; font-size: 22px; color: var(--muted); }
+  .days { display: flex; margin-top: 22px; }
   .day {
-    width: 168px; margin-left: 16px; padding: 22px 0 20px;
-    border-radius: 24px; background: var(--card); text-align: center;
+    flex: 1; margin-left: 16px; padding: 18px 0 16px;
+    border-radius: 22px; background: var(--card); text-align: center;
   }
-  .day .name { font-size: 24px; color: var(--muted); }
-  .day svg { width: 60px; height: 60px; margin: 12px 0 8px; }
-  .day .range { font-size: 28px; }
+  .day:first-child { margin-left: 0; }
+  .day .name { font-size: 22px; color: var(--muted); }
+  .day svg { width: 52px; height: 52px; margin: 8px 0 6px; }
+  .day .range { font-size: 26px; }
   .day .range span { color: var(--muted); }
-  .day .rain { margin-top: 6px; font-size: 20px; color: #7fb4ff; }
+  .day .rain { margin-top: 4px; font-size: 19px; color: #7fb4ff; }
+
+  /* ---------- Schlagzeilen ---------- */
+  #news { margin-top: 34px; }
+  .src {
+    display: flex; justify-content: space-between;
+    margin: 26px 0 6px; font-size: 18px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .src:first-child { margin-top: 0; }
+  .item { display: flex; padding: 13px 0; border-top: 1px solid var(--line); }
+  .item .n { width: 34px; flex-shrink: 0; font-size: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .item .t {
+    font-size: 22px; line-height: 1.32;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .item .k { color: var(--muted); }
   .wx { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .wx .sun { stroke: #ffd36b; }
   .wx .drop { stroke: #7fb4ff; }
@@ -59,10 +80,10 @@
   /* ---------- Kacheln ---------- */
   #tiles {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     grid-auto-rows: 228px;
-    grid-gap: 28px;
-    margin-top: 72px;
+    grid-gap: 24px;
+    margin-top: 56px;
   }
   .tile {
     position: relative; overflow: hidden;
@@ -106,7 +127,7 @@
   .editing .tile.focus::after { opacity: 1; border-style: solid; border-color: #ffd36b; }
 
   /* ---------- Fußzeile ---------- */
-  footer { display: flex; margin-top: 64px; }
+  footer { display: flex; flex-wrap: wrap; margin-top: 48px; }
   .pill {
     display: flex; align-items: center;
     height: 72px; padding: 0 34px; margin-right: 20px;
@@ -116,7 +137,7 @@
   }
   .pill svg { width: 30px; height: 30px; margin-right: 14px; }
   .pill.focus { background: #f2f4f8; color: #0b0e14; transform: scale(1.05); }
-  #hint { margin-left: auto; align-self: center; font-size: 22px; color: var(--muted); }
+  #hint { width: 100%; margin-top: 22px; font-size: 22px; color: var(--muted); }
   .dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin: 0 6px 0 22px; vertical-align: -1px; }
 
   /* ---------- Overlays ---------- */
@@ -152,13 +173,9 @@
 </head>
 <body>
 <div id="stage">
-  <header>
-    <div>
-      <div id="time">--:--</div>
-      <div id="date"></div>
-    </div>
-    <div id="weather"></div>
-  </header>
+  <div class="left">
+  <div id="time">--:--</div>
+  <div id="date"></div>
 
   <main id="tiles"></main>
 
@@ -168,6 +185,12 @@
     <div class="pill f" data-action="reload"><svg viewBox="0 0 24 24" class="wx"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Neu laden</div>
     <div id="hint"></div>
   </footer>
+  </div>
+
+  <aside class="right">
+    <div id="weather"></div>
+    <div id="news"></div>
+  </aside>
 
   <section class="overlay" id="browser">
     <h2>Internet <span>Adresse oder Suchbegriff · Öffnet im Samsung-Browser</span></h2>
@@ -194,6 +217,12 @@
 // =====================================================================
 var CONFIG = {
   weather: { name: 'Leipzig', lat: 51.34, lon: 12.37 },
+
+  // Je die ersten 3 Einträge. proxy: true = über den TV-Dienst holen (Feed erlaubt keinen Browser-Abruf).
+  news: [
+    { name: 'ZEIT ONLINE',        url: 'https://newsfeed.zeit.de/index', proxy: true },
+    { name: 'The New York Times', url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml' }
+  ],
 
   // Hochzählen, wenn sich die Standard-Kacheln ändern – setzt am TV gespeicherte Anordnungen zurück.
   tilesVersion: 2,
@@ -286,7 +315,7 @@ function renderWeather(w) {
   var now = wxKind(w.current.weather_code);
   var html = '<div class="now">' + wxIcon(now[0]) +
     '<div><div class="temp">' + Math.round(w.current.temperature_2m) + '°</div>' +
-    '<div class="desc">' + CONFIG.weather.name + ' · ' + now[1] + '</div></div></div>';
+    '<div class="desc">' + CONFIG.weather.name + ' · ' + now[1] + '</div></div></div><div class="days">';
   for (var i = 0; i < 3; i++) {
     var date = new Date(w.daily.time[i] + 'T12:00:00');
     var name = i === 0 ? 'Heute' : i === 1 ? 'Morgen' : DAYS[date.getDay()];
@@ -296,7 +325,52 @@ function renderWeather(w) {
       '<div class="range">' + Math.round(w.daily.temperature_2m_max[i]) + '° <span>' + Math.round(w.daily.temperature_2m_min[i]) + '°</span></div>' +
       '<div class="rain">' + (rain == null ? '' : rain + ' %') + '</div></div>';
   }
-  $('weather').innerHTML = html;
+  $('weather').innerHTML = html + '</div>';
+}
+
+// ---------- Schlagzeilen (RSS) ----------
+function fetchFeed(src) {
+  var viaService = function () { return svc('/feed?url=' + encodeURIComponent(src.url)); };
+  if (src.proxy && !PREVIEW) return viaService();
+  return fetch(src.url).then(function (r) {
+    if (!r.ok) throw new Error();
+    return r.text();
+  }).catch(viaService);
+}
+function parseFeed(xml) {
+  var doc = new DOMParser().parseFromString(xml, 'text/xml');
+  var items = doc.getElementsByTagName('item');
+  var out = [];
+  for (var i = 0; i < items.length && out.length < 3; i++) {
+    var title = items[i].getElementsByTagName('title')[0];
+    if (title && title.textContent.trim()) out.push(title.textContent.trim());
+  }
+  return out;
+}
+function renderNews(news) {
+  if (!news) return;
+  $('news').innerHTML = CONFIG.news.map(function (src) {
+    var list = news[src.name] || [];
+    return '<div class="src"><span>' + escapeHtml(src.name) + '</span></div>' +
+      list.map(function (title, i) {
+        // „Rubrik: Titel“ → Rubrik gedimmt
+        var m = /^([^:]{2,40}):\s+(.+)$/.exec(title);
+        var text = m ? '<span class="k">' + escapeHtml(m[1]) + ' · </span>' + escapeHtml(m[2]) : escapeHtml(title);
+        return '<div class="item"><div class="n">' + (i + 1) + '</div><div class="t">' + text + '</div></div>';
+      }).join('');
+  }).join('');
+}
+function loadNews() {
+  var news = store.get('news', {}) || {};
+  Promise.all(CONFIG.news.map(function (src) {
+    return fetchFeed(src).then(parseFeed).then(function (list) {
+      if (list.length) news[src.name] = list;
+    }).catch(function () {});
+  })).then(function () {
+    store.set('news', news);
+    renderNews(news);
+  });
+  setTimeout(loadNews, 15 * 60 * 1000);
 }
 function loadWeather() {
   var c = CONFIG.weather;
@@ -518,12 +592,15 @@ function launchModule(t) {
   if (PREVIEW) return toast('Start: ' + t.label);
   tbModules().then(function (list) {
     var mdl = findModule(list, t.module);
-    if (!mdl || !mdl.appPath) throw new Error('missing');
+    if (!mdl || !mdl.appPath) {
+      tb.modules = null; // beim nächsten Versuch neu laden, falls gerade erst hinzugefügt
+      return toast(t.label + ' fehlt in TizenBrew (' + list.length + ' Module) – GitHub-Modul: ' + t.module);
+    }
     sessionStorage.setItem('fl.away', '1');
     tbLaunch(mdl);
     setTimeout(function () { location.href = mdl.appPath; }, 200);
-  }).catch(function () {
-    toast(t.label + ' fehlt in TizenBrew – Module → GitHub-Modul: ' + t.module);
+  }).catch(function (e) {
+    toast('TizenBrew-Dienst nicht erreichbar (' + (e && e.message || 'WebSocket') + ')');
   });
 }
 // Zurück von einem anderen Modul: TizenBrew würde dessen Skript sonst auch in den Launcher spritzen.
@@ -710,9 +787,11 @@ try {
 fit();
 tickClock();
 renderWeather(store.get('weather', null)); // sofort aus Cache, dann frisch laden
+renderNews(store.get('news', null));
 renderTiles(0);
 updateHint();
 loadWeather();
+loadNews();
 loadApps();
 </script>
 </body>

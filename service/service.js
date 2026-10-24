@@ -8,9 +8,11 @@
 //   GET /open?url=<url>             URL im Samsung-Browser öffnen
 //   GET /key?k=KEY_HDMI1&token=     Fernbedienungstaste senden
 //   GET /art?on=1&token=            Art Mode einschalten
+//   GET /feed?url=<rss-url>         RSS-Feed holen (für Feeds ohne CORS, z. B. ZEIT)
 'use strict';
 
 var http = require('http');
+var https = require('https');
 var tls = require('tls');
 var crypto = require('crypto');
 var url = require('url');
@@ -225,6 +227,30 @@ function openUrl(target, cb) {
   })();
 }
 
+// ---------- Feeds ----------
+
+function fetchText(target, cb, hops) {
+  hops = hops || 0;
+  if (!/^https?:\/\//.test(target)) return cb(new Error('ungültige URL'));
+  var opts = url.parse(target);
+  // Tizens Node hat einen alten CA-Store; es geht nur um öffentliche Schlagzeilen.
+  opts.rejectUnauthorized = false;
+  opts.headers = { 'User-Agent': 'Mozilla/5.0 (SMART-TV; Tizen) FrameLauncher' };
+  (target.indexOf('https:') === 0 ? https : http).get(opts, function (r) {
+    if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && hops < 4) {
+      r.resume();
+      return fetchText(url.resolve(target, r.headers.location), cb, hops + 1);
+    }
+    if (r.statusCode !== 200) {
+      r.resume();
+      return cb(new Error('HTTP ' + r.statusCode));
+    }
+    var chunks = [];
+    r.on('data', function (c) { chunks.push(c); });
+    r.on('end', function () { cb(null, Buffer.concat(chunks).toString('utf8')); });
+  }).on('error', cb);
+}
+
 // ---------- HTTP-Server ----------
 
 function reply(res, err, data) {
@@ -247,6 +273,7 @@ var server = http.createServer(function (req, res) {
       case '/open': return openUrl(q.url, function (e) { reply(res, e); });
       case '/key': return sendKey(q.k, function (e) { reply(res, e); });
       case '/art': return setArtMode(q.on !== '0', function (e) { reply(res, e); });
+      case '/feed': return fetchText(q.url, function (e, text) { reply(res, e, text); });
       default: return reply(res, new Error('unbekannt'));
     }
   } catch (e) {
