@@ -360,6 +360,11 @@ var server = http.createServer(function (req, res) {
     return setupPage(res);
   }
   if (u.pathname === '/ping') return reply(res, null, 'pong');
+  // Kurze Rücksprung-Adresse zum Launcher, z. B. als Seite in TizenPortal: 127.0.0.1:8093/home
+  if (u.pathname === '/home') {
+    res.writeHead(302, { Location: 'http://127.0.0.1:8081/module/' + encodeURIComponent('gh/hando8488/frame_launcher') + '/app/index.html' });
+    return res.end();
+  }
   if (u.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
   if (!isLocal(req)) return reply(res, new Error('nur lokal'));
 

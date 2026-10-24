@@ -285,7 +285,7 @@ var CONFIG = {
 };
 // =====================================================================
 
-var VERSION = '0.6.1';
+var VERSION = '0.7.0';
 var SERVICE = 'http://127.0.0.1:8093';
 var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406, CH_UP: 427, CH_DOWN: 428 };
 var PREVIEW = location.protocol === 'file:' || location.search.indexOf('preview') >= 0;
@@ -998,7 +998,7 @@ document.addEventListener('keydown', function (e) {
     case KEY.OK:    e.preventDefault(); ok(); break;
     case KEY.BACK: case 27: case 8:
       e.preventDefault();
-      if (overlay) closeOverlay(); else if (editing) setEditing(false);
+      if (overlay) closeOverlay(); else if (editing) setEditing(false); else leaveLauncher();
       break;
     case KEY.RED: case 112: setEditing(!editing); break;
     case KEY.GREEN: case 113: if (editing) loadApps().then(function () { openOverlay('picker'); }); break;
@@ -1010,6 +1010,17 @@ document.addEventListener('keydown', function (e) {
       break;
   }
 });
+
+// Zweimal Zurück → zurück zur TizenBrew-Startseite (bzw. App beenden, wenn es keine gibt).
+var leaveArmed = 0;
+function leaveLauncher() {
+  if (Date.now() - leaveArmed > 2500) {
+    leaveArmed = Date.now();
+    return toast('Nochmal Zurück: TizenBrew-Startseite');
+  }
+  if (history.length > 1) return history.back();
+  try { tizen.application.getCurrentApplication().exit(); } catch (e) {}
+}
 
 // ---------- Toast ----------
 var toastTimer;
