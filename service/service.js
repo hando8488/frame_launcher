@@ -340,6 +340,7 @@ var server = http.createServer(function (req, res) {
     return setupPage(res);
   }
   if (u.pathname === '/ping') return reply(res, null, 'pong');
+  if (u.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
   if (!isLocal(req)) return reply(res, new Error('nur lokal'));
 
   if (q.token && !token) token = q.token;

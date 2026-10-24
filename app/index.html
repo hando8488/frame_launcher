@@ -226,6 +226,11 @@
     <div class="chips" id="pickerList"></div>
   </section>
 
+  <section class="overlay" id="tileEdit">
+    <h2 id="tileEditTitle"></h2>
+    <div class="chips" id="tileEditList"></div>
+  </section>
+
   <section class="overlay" id="player">
     <video id="video" autoplay playsinline></video>
     <div id="osd"></div>
@@ -681,6 +686,7 @@ function openUrl(input) {
 // ---------- Kacheln ----------
 var tiles = store.get('tilesVersion', 0) === CONFIG.tilesVersion && store.get('tiles', null) || CONFIG.tiles.slice();
 var editing = false;
+var editIndex = 0;
 
 function hueColors(name) {
   var h = 0;
@@ -840,7 +846,7 @@ function setEditing(on) {
 }
 function updateHint() {
   $('hint').innerHTML = editing
-    ? '◀ ▶ verschieben<span class="dot" style="background:#e5484d"></span>fertig<span class="dot" style="background:#30a46c"></span>App hinzufügen<span class="dot" style="background:#f5d90a"></span>entfernen<span class="dot" style="background:#3e63dd"></span>zurücksetzen'
+    ? '◀ ▶ verschieben · OK Anschluss<span class="dot" style="background:#e5484d"></span>fertig<span class="dot" style="background:#30a46c"></span>App hinzufügen<span class="dot" style="background:#f5d90a"></span>entfernen<span class="dot" style="background:#3e63dd"></span>zurücksetzen'
     : '<span class="dot" style="background:#e5484d;margin-left:0"></span>bearbeiten';
 }
 
@@ -892,6 +898,14 @@ function openOverlay(id) {
     }).join('');
     $('url').value = '';
     setFocus($('url'));
+  } else if (id === 'tileEdit') {
+    var t = tiles[editIndex];
+    $('tileEditTitle').innerHTML = escapeHtml(t.label) + ' <span>Anschluss wählen · Zurück schließt</span>';
+    $('tileEditList').innerHTML = [1, 2, 3, 4].map(function (n) {
+      return '<div class="pill f" data-hdmi="' + n + '">HDMI ' + n + '</div>';
+    }).join('') + '<div class="pill f" data-hdmi="0">Quellen-Menü</div>';
+    var current = $('tileEditList').querySelector('[data-hdmi="' + (t.key === 'KEY_SOURCE' ? 0 : t.key.replace('KEY_HDMI', '')) + '"]');
+    setFocus(current || $('tileEditList').querySelector('.f'));
   } else if (id === 'picker') {
     $('pickerList').innerHTML = installed.length
       ? installed.map(function (a, i) { return '<div class="pill f" data-app="' + i + '">' + escapeHtml(a.name) + '</div>'; }).join('')
@@ -906,6 +920,8 @@ function closeOverlay() {
     stopVideo();
     back = Math.max(0, tiles.indexOf(channel));
     channel = null;
+  } else if (overlay === 'tileEdit') {
+    back = editIndex;
   }
   $(overlay).classList.remove('open');
   if (document.activeElement) document.activeElement.blur();
@@ -926,7 +942,22 @@ function ok() {
     renderTiles(tiles.length - 1);
     return;
   }
-  if (d.tile != null) { if (!editing) activateTile(tiles[+d.tile]); return; }
+  if (d.hdmi != null) {
+    var n = +d.hdmi;
+    tiles[editIndex].key = n ? 'KEY_HDMI' + n : 'KEY_SOURCE';
+    tiles[editIndex].sub = n ? 'HDMI ' + n : 'Quellen';
+    saveTiles();
+    closeOverlay();
+    renderTiles(editIndex);
+    return;
+  }
+  if (d.tile != null) {
+    if (!editing) return activateTile(tiles[+d.tile]);
+    if (tiles[+d.tile].type !== 'key') return toast('Für diese Kachel gibt es keine Einstellungen');
+    editIndex = +d.tile;
+    openOverlay('tileEdit');
+    return;
+  }
   if (d.action === 'art') tvCommand('/art?on=1', 'Art Mode');
   if (d.action === 'edit') setEditing(!editing);
   if (d.action === 'reload') location.reload();
